@@ -1,0 +1,52 @@
+name: beatbot-publish
+
+# 18h30 Europe/Zurich = 16:30 UTC (CEST, été). Rattrapage à 17:15 UTC si le
+# 1er run est retardé/sauté. Idempotent : ne double-poste jamais (state committé).
+on:
+  schedule:
+    - cron: '30 16 * * *'
+    - cron: '15 17 * * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Simulation (1 = ne publie pas)'
+        default: '1'
+      only:
+        description: "Ne publier qu'un post (ex: 02) — ignore l'heure"
+        default: ''
+
+concurrency:
+  group: beatbot-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Publier les posts dus
+        env:
+          META_TOKEN: ${{ secrets.META_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+          DRY: ${{ github.event.inputs.dry || '0' }}
+          ONLY_POST: ${{ github.event.inputs.only || '' }}
+        run: python publish.py
+      - name: Committer l'état
+        if: ${{ github.event.inputs.dry != '1' }}
+        run: |
+          if [[ -n "$(git status --porcelain state/published.json)" ]]; then
+            git config user.name "gardeco-bot"
+            git config user.email "bot@gardeco.ch"
+            git add state/published.json
+            git commit -m "state: posts publiés $(date -u +%FT%TZ)"
+            git push
+          fi
