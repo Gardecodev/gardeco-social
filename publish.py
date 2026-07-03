@@ -100,9 +100,11 @@ def publish_facebook(post):
     for u in media:
         r = api("POST", "%s/photos" % FB_PAGE, {"url": u, "published": "false", "access_token": TOKEN})
         ids.append(r["id"])
-    attached = json.dumps([{"media_fbid": i} for i in ids])
-    r = api("POST", "%s/feed" % FB_PAGE,
-            {"message": caption, "attached_media": attached, "access_token": TOKEN})
+    # attached_media en clés indexées (forme fiable, validée en prod le 03-07)
+    data = {"message": caption, "access_token": TOKEN}
+    for idx, pid in enumerate(ids):
+        data["attached_media[%d]" % idx] = json.dumps({"media_fbid": pid})
+    r = api("POST", "%s/feed" % FB_PAGE, data)
     return r.get("id")
 
 
