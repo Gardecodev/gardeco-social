@@ -29,7 +29,7 @@ GRAPH = "https://graph.facebook.com/v21.0"
 TOKEN   = os.environ["META_TOKEN"]
 IG_USER = os.environ["IG_USER_ID"]
 FB_PAGE = os.environ["FB_PAGE_ID"]
-PIN_API = "https://api.pinterest.com/v5"
+PIN_API = os.environ.get("PINTEREST_API_BASE", "https://api.pinterest.com").rstrip("/") + "/v5"
 PIN_APP_ID = os.environ.get("PINTEREST_APP_ID", "").strip()
 PIN_APP_SECRET = os.environ.get("PINTEREST_APP_SECRET", "").strip()
 PIN_REFRESH = os.environ.get("PINTEREST_REFRESH_TOKEN", "").strip()
@@ -122,7 +122,7 @@ _pin_token = None
 
 
 def pin_token():
-    """Échange le refresh token (~1 an) contre un access token, une fois par run."""
+    """Échange le refresh token (rotatif ~60 j) contre un access token, une fois par run."""
     global _pin_token
     if _pin_token:
         return _pin_token

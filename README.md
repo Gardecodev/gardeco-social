@@ -24,7 +24,7 @@ Les deux horaires cron + l'état committé garantissent : jamais de double-post,
 | `FB_PAGE_ID` | `518330814689805` (Page Gardeco) |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | (optionnel) notifications |
 | `PINTEREST_APP_ID` / `PINTEREST_APP_SECRET` | App « Gardeco Social » (App ID `1580225`), portail dev Pinterest |
-| `PINTEREST_REFRESH_TOKEN` | Refresh token OAuth (~1 an), généré par `pinterest_auth.py login` |
+| `PINTEREST_REFRESH_TOKEN` | Refresh token OAuth (**rotatif ~60 j** — re-poser au moins tous les 2 mois via `pinterest_auth.py refresh` + `secrets`) |
 
 ## Tester / piloter (onglet **Actions** → *beatbot-publish* → *Run workflow*)
 
@@ -47,11 +47,14 @@ DRY=1 META_TOKEN=… IG_USER_ID=17841470367810433 FB_PAGE_ID=518330814689805 pyt
   `board_id` requis ; `title`/`description` retombent sur la légende (tronquée) si absents ;
   un carrousel devient un pin multi-images.
 - Auth : `pinterest_auth.py` — `login` (flow OAuth complet, celui qu'on filme pour la demande
-  d'accès Standard), `whoami`, `refresh`, `secrets`. Tokens dans
-  `~/.config/claude-seo/pinterest-social.json` ; l'access token (30 j) est renouvelé à chaque
-  run via le refresh token (~1 an).
-- ⚠️ **App en accès Trial : les pins créés sont sandbox** (visibles par nous seuls, l'API répond
-  200 + un id quand même). Publics seulement une fois l'app en **accès Standard**. Runbook :
+  d'accès Standard), `whoami`, `refresh`, `pin-test` (board + pin de démo), `secrets`. Tokens dans
+  `~/.config/claude-seo/pinterest-social.json` (`.sandbox.json` pour le sandbox) ; l'access token
+  (30 j) est renouvelé à chaque run via le refresh token (**rotatif ~60 j** — chaque refresh en
+  émet un nouveau, l'ancien reste valable jusqu'à sa propre expiration).
+- ⚠️ **App en accès Trial** (constaté 17-07-2026) : créer un pin en **prod → 403 explicite**
+  (« use API Sandbox ») ; les **boards passent et sont publics**. Les pins de test/démo se font
+  sur `api-sandbox.pinterest.com` (`PINTEREST_API_BASE`), token sandbox dédié via le même `login`.
+  Pins publics seulement une fois l'app en **accès Standard**. Runbook :
   `~/Pro/Gardeco/Marketing/Social/pinterest/standard-access-runbook.md`.
 
 ## Calendrier
