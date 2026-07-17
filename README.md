@@ -1,6 +1,7 @@
 # gardeco-social
 
-Auto-publication programmée sur **Instagram + Facebook** (@gardecoch) via la Graph API.
+Auto-publication programmée sur **Instagram + Facebook** (@gardecoch) via la Graph API,
+et **Pinterest** (@gardeco) via l'API v5.
 Première campagne : **Beatbot été 2026** (11 posts, 07.07 → 14.08, 2/semaine, 18h30 CH).
 
 ## Comment ça marche
@@ -22,6 +23,8 @@ Les deux horaires cron + l'état committé garantissent : jamais de double-post,
 | `IG_USER_ID` | `17841470367810433` (@gardecoch) |
 | `FB_PAGE_ID` | `518330814689805` (Page Gardeco) |
 | `PUSHOVER_TOKEN` / `PUSHOVER_USER` | (optionnel) notifications |
+| `PINTEREST_APP_ID` / `PINTEREST_APP_SECRET` | App « Gardeco Social » (App ID `1580225`), portail dev Pinterest |
+| `PINTEREST_REFRESH_TOKEN` | Refresh token OAuth (~1 an), généré par `pinterest_auth.py login` |
 
 ## Tester / piloter (onglet **Actions** → *beatbot-publish* → *Run workflow*)
 
@@ -33,6 +36,23 @@ En local :
 ```bash
 DRY=1 META_TOKEN=… IG_USER_ID=17841470367810433 FB_PAGE_ID=518330814689805 python publish.py
 ```
+
+## Pinterest
+
+- Ajouter `"pinterest"` aux `platforms` d'un post + un bloc dédié :
+  ```json
+  "pinterest": {"board_id": "…", "title": "≤100 c", "description": "≤800 c",
+                "link": "https://gardeco.ch/…", "alt_text": "…"}
+  ```
+  `board_id` requis ; `title`/`description` retombent sur la légende (tronquée) si absents ;
+  un carrousel devient un pin multi-images.
+- Auth : `pinterest_auth.py` — `login` (flow OAuth complet, celui qu'on filme pour la demande
+  d'accès Standard), `whoami`, `refresh`, `secrets`. Tokens dans
+  `~/.config/claude-seo/pinterest-social.json` ; l'access token (30 j) est renouvelé à chaque
+  run via le refresh token (~1 an).
+- ⚠️ **App en accès Trial : les pins créés sont sandbox** (visibles par nous seuls, l'API répond
+  200 + un id quand même). Publics seulement une fois l'app en **accès Standard**. Runbook :
+  `~/Pro/Gardeco/Marketing/Social/pinterest/standard-access-runbook.md`.
 
 ## Calendrier
 
