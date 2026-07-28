@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Auto-publisher social Gardeco (Instagram + Facebook + Pinterest).
+Auto-publisher social Gardeco (Instagram + Facebook + Pinterest + TikTok).
 
 Lit schedule.json, publie les posts dont l'heure est arrivée et qui ne sont
 pas déjà publiés (state/published.json), sur IG et FB via la Graph API,
-et sur Pinterest via l'API v5.
+sur Pinterest via l'API v5 et sur TikTok via la Content Posting API v2.
 
 Idempotent : chaque plateforme est marquée séparément. Un post déjà publié
 est ignoré. Sûr à relancer (les horaires cron redondants ne double-postent pas).
@@ -17,6 +17,14 @@ Variables d'environnement :
                   (optionnels) credentials Pinterest v5 — requis seulement si un
                   post liste la plateforme "pinterest". ⚠️ App en accès Trial =
                   pins sandbox (visibles par nous seuls) ; publics dès l'accès Standard.
+  TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET / TIKTOK_REFRESH_TOKEN
+                  (optionnels) credentials TikTok v2 — requis seulement si un post
+                  liste la plateforme "tiktok". ⚠️ App non auditée = posts forcés
+                  SELF_ONLY ; passer privacy PUBLIC_TO_EVERYONE par post une fois
+                  l'audit Content Posting obtenu. ⚠️ PULL_FROM_URL n'accepte que
+                  les domaines vérifiés dans le portail dev (gardeco.ch ✓,
+                  cdn.jsdelivr.net ✗) → bloc tiktok.photo_urls avec des URLs
+                  gardeco.ch tant que les médias du repo vivent sur jsDelivr.
   PUSHOVER_TOKEN  (optionnel) app token Pushover
   PUSHOVER_USER   (optionnel) user key Pushover
   DRY             "1" = simulation (n'appelle pas l'API de publication)
@@ -33,6 +41,11 @@ PIN_API = os.environ.get("PINTEREST_API_BASE", "https://api.pinterest.com").rstr
 PIN_APP_ID = os.environ.get("PINTEREST_APP_ID", "").strip()
 PIN_APP_SECRET = os.environ.get("PINTEREST_APP_SECRET", "").strip()
 PIN_REFRESH = os.environ.get("PINTEREST_REFRESH_TOKEN", "").strip()
+TT_API = "https://open.tiktokapis.com/v2"
+TT_KEY = os.environ.get("TIKTOK_CLIENT_KEY", "").strip()
+TT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET", "").strip()
+TT_REFRESH = os.environ.get("TIKTOK_REFRESH_TOKEN", "").strip()
+TT_VERIFIED_HOSTS = {"gardeco.ch", "www.gardeco.ch"}
 PUSH_TOKEN = os.environ.get("PUSHOVER_TOKEN", "").strip()
 PUSH_USER  = os.environ.get("PUSHOVER_USER", "").strip()
 DRY  = os.environ.get("DRY", "0") == "1"
@@ -175,6 +188,86 @@ def publish_pinterest(post):
     return pin_api("POST", "/pins", body)["id"]
 
 
+# ---------- TikTok ----------
+_tt_token = None
+
+
+def tt_token():
+    """Échange le refresh token (365 j) contre un access token (24 h), une fois par run."""
+    global _tt_token
+    if _tt_token:
+        return _tt_token
+    if not (TT_KEY and TT_SECRET and TT_REFRESH):
+        raise RuntimeError("secrets TikTok manquants (TIKTOK_CLIENT_KEY / _CLIENT_SECRET / _REFRESH_TOKEN)")
+    req = urllib.request.Request(TT_API + "/oauth/token/",
+        data=urllib.parse.urlencode({"client_key": TT_KEY, "client_secret": TT_SECRET,
+                                     "grant_type": "refresh_token",
+                                     "refresh_token": TT_REFRESH}).encode(), method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            tok = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("TikTok oauth/token -> HTTP %s %s" % (e.code, e.read().decode()[:400]))
+    if tok.get("error"):
+        raise RuntimeError("TikTok oauth/token -> %s : %s" % (tok["error"], tok.get("error_description")))
+    _tt_token = tok["access_token"]
+    return _tt_token
+
+
+def tt_api(path, body):
+    # v2 = JSON + Bearer ; les erreurs arrivent dans body["error"] même en HTTP 200
+    req = urllib.request.Request(TT_API + path, data=json.dumps(body).encode(), method="POST")
+    req.add_header("Authorization", "Bearer " + tt_token())
+    req.add_header("Content-Type", "application/json; charset=UTF-8")
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            out = json.load(r)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("POST %s -> HTTP %s %s" % (path, e.code, e.read().decode()[:400]))
+    err = out.get("error") or {}
+    if err.get("code") not in (None, "ok"):
+        raise RuntimeError("POST %s -> %s : %s (log_id %s)"
+                           % (path, err.get("code"), err.get("message"), err.get("log_id")))
+    return out.get("data", out)
+
+
+def tt_wait(publish_id, tries=24):
+    for _ in range(tries):
+        st = tt_api("/post/publish/status/fetch/", {"publish_id": publish_id})
+        status = st.get("status")
+        if status == "PUBLISH_COMPLETE":
+            return
+        if status == "FAILED":
+            raise RuntimeError("TikTok publish %s -> FAILED : %s" % (publish_id, st.get("fail_reason")))
+        time.sleep(5)
+    raise RuntimeError("TikTok publish %s pas finalisé après %d essais" % (publish_id, tries))
+
+
+def publish_tiktok(post):
+    """Post photo direct depuis le bloc post["tiktok"] (title/description retombent
+    sur la légende). privacy = SELF_ONLY par défaut TANT QUE l'audit Content Posting
+    n'est pas passé (le serveur refuse le public avant, de toute façon)."""
+    cfg = post.get("tiktok") or {}
+    caption, media = post["caption"], cfg.get("photo_urls") or post["media"]
+    bad = [u for u in media if urllib.parse.urlparse(u).hostname not in TT_VERIFIED_HOSTS]
+    if bad:
+        raise RuntimeError("post %s : URL média hors domaine vérifié TikTok (%s) — "
+                           "poser tiktok.photo_urls avec des URLs gardeco.ch" % (post["post"], bad[0]))
+    body = {"post_info": {"title": (cfg.get("title") or caption.split("\n", 1)[0])[:90],
+                          "description": (cfg.get("description") or caption)[:4000],
+                          "privacy_level": cfg.get("privacy", "SELF_ONLY"),
+                          "disable_comment": bool(cfg.get("disable_comment", False)),
+                          # divulgation contenu commercial : notre propre marque
+                          "brand_organic_toggle": True, "brand_content_toggle": False},
+            "source_info": {"source": "PULL_FROM_URL", "photo_cover_index": 0,
+                            "photo_images": media},
+            "post_mode": "DIRECT_POST", "media_type": "PHOTO"}
+    pid = tt_api("/post/publish/content/init/", body)["publish_id"]
+    tt_wait(pid)
+    return pid
+
+
 def is_due(post, now):
     t = datetime.fromisoformat(post["publish_at_utc"].replace("Z", "+00:00"))
     return now >= t
@@ -210,6 +303,9 @@ def main():
             if "pinterest" in plats and not st.get("pinterest"):
                 st["pinterest"] = publish_pinterest(post)
                 print("   PIN ->", st["pinterest"])
+            if "tiktok" in plats and not st.get("tiktok"):
+                st["tiktok"] = publish_tiktok(post)
+                print("   TT  ->", st["tiktok"])
             st["published_at"] = now.isoformat()
             state[pid] = st
             changed = True
