@@ -44,7 +44,8 @@ jobs:
           ONLY_POST: ${{ github.event.inputs.only || '' }}
         run: python publish.py
       - name: Committer l'état
-        if: ${{ github.event.inputs.dry != '1' }}
+        # always() : l'état est enregistré même si une publication a échoué (évite un double post au rattrapage)
+        if: ${{ always() && github.event.inputs.dry != '1' }}
         run: |
           if [[ -n "$(git status --porcelain state/published.json)" ]]; then
             git config user.name "gardeco-bot"

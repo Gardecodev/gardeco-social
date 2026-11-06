@@ -208,6 +208,7 @@ def check_token():
 def main():
     now = datetime.now(timezone.utc)
     changed = False
+    failed = []
     if DRY and TOKEN not in ("", "x"):
         check_token()
     for post in SCHED:
@@ -244,6 +245,7 @@ def main():
         except Exception as e:
             state[pid] = st  # garde ce qui a réussi (ex IG ok, FB échoue)
             changed = changed or bool(st)
+            failed.append(pid)
             print("   ERREUR:", e)
             push("Post %s ÉCHEC ⚠️\n%s" % (pid, str(e)[:300]))
     if changed and not DRY:
@@ -252,6 +254,10 @@ def main():
         print("state/published.json mis à jour")
     else:
         print("(rien à publier)" if not DRY else "(dry-run terminé)")
+    if failed:
+        # Run en échec (croix rouge) → GitHub envoie un e-mail au compte du dépôt.
+        print("ÉCHEC de publication : %s" % ", ".join(failed))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
