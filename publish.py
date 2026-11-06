@@ -21,6 +21,9 @@ Variables d'environnement :
   PUSHOVER_USER   (optionnel) user key Pushover
   DRY             "1" = simulation (n'appelle pas l'API de publication)
   ONLY_POST       (optionnel) ne traiter que ce post (ex "02"), ignore l'heure
+
+Types : "image" (1 visuel), "carousel" (2-10 visuels), "reel" (1 MP4 9:16 ;
+IG = Reel partagé dans le fil, FB = vidéo de Page ; option thumb_offset_ms = image de couverture).
 """
 import base64, json, os, sys, time, urllib.request, urllib.parse, urllib.error
 from datetime import datetime, timezone
@@ -55,7 +58,7 @@ def api(method, path, data=None):
         raise RuntimeError("%s %s -> HTTP %s %s" % (method, path.split("?")[0], e.code, e.read().decode()[:400]))
 
 
-def push(msg, title="Beatbot social"):
+def push(msg, title="Gardeco social"):
     if not (PUSH_TOKEN and PUSH_USER):
         return
     try:
@@ -72,7 +75,7 @@ def ig_container(params):
     return api("POST", "%s/media" % IG_USER, params)["id"]
 
 
-def ig_wait(container_id, tries=40):
+def ig_wait(container_id, tries=40, pause=5):
     for _ in range(tries):
         st = api("GET", "%s?fields=status_code&access_token=%s" % (container_id, TOKEN))
         code = st.get("status_code")
@@ -80,13 +83,20 @@ def ig_wait(container_id, tries=40):
             return
         if code == "ERROR":
             raise RuntimeError("IG container %s -> ERROR" % container_id)
-        time.sleep(5)
+        time.sleep(pause)
     raise RuntimeError("IG container %s pas prêt après %d essais" % (container_id, tries))
 
 
 def publish_instagram(post):
     media, caption = post["media"], post["caption"]
-    if len(media) == 1:
+    if post.get("type") == "reel":
+        # Reel : vidéo MP4 9:16 (H.264 + AAC), traitement côté Meta = quelques minutes
+        params = {"media_type": "REELS", "video_url": media[0], "caption": caption, "share_to_feed": "true"}
+        if post.get("thumb_offset_ms") is not None:
+            params["thumb_offset"] = str(post["thumb_offset_ms"])
+        cid = ig_container(params)
+        ig_wait(cid, tries=60, pause=10)
+    elif len(media) == 1:
         cid = ig_container({"image_url": media[0], "caption": caption})
         ig_wait(cid)
     else:
@@ -101,6 +111,10 @@ def publish_instagram(post):
 # ---------- Facebook ----------
 def publish_facebook(post):
     media, caption = post["media"], post["caption"]
+    if post.get("type") == "reel":
+        r = api("POST", "%s/videos" % FB_PAGE,
+                {"file_url": media[0], "description": caption, "access_token": TOKEN})
+        return r.get("post_id") or r.get("id")
     if len(media) == 1:
         r = api("POST", "%s/photos" % FB_PAGE,
                 {"url": media[0], "caption": caption, "access_token": TOKEN})

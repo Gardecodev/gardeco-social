@@ -64,6 +64,7 @@ Voir `schedule.json`. Source éditoriale (légendes, angles) :
 
 ## Notes
 
-- Fuseau : cron en UTC. 18h30 CH été (CEST) = 16:30 UTC. Campagne 100 % en été → pas de bascule DST.
+- Fuseau : cron en UTC. 16:30 UTC = 18h30 CH en été (CEST), **17h30 CH en hiver (CET)** : les posts spas nov.-déc. 2026 sont donc à 17h30.
+- **Reels** (ajout 06-11-2026) : `"type": "reel"`, 1 MP4 9:16 H.264 + AAC dans `media/` (≤ 20 Mo pour jsDelivr) ; IG = Reel partagé dans le fil (`share_to_feed`), FB = vidéo de Page ; `thumb_offset_ms` = image de couverture. Stories : publication manuelle (autocollants sondage/quiz impossibles par l'API).
 - Carrousels 03/07 : jeu de slides **FR** + légende bilingue FR+DE (1 seule version publiée).
 - Isolé volontairement de la base boutique (données clients) : aucun accès Supabase.
