@@ -110,7 +110,8 @@ def publish_instagram(post):
 
 # ---------- Facebook ----------
 def publish_facebook(post):
-    media, caption = post["media"], post["caption"]
+    # caption_fb : variante Facebook (liens cliquables avec suivi, pas de « lien dans la bio »)
+    media, caption = post["media"], post.get("caption_fb") or post["caption"]
     if post.get("type") == "reel":
         r = api("POST", "%s/videos" % FB_PAGE,
                 {"file_url": media[0], "description": caption, "access_token": TOKEN})
@@ -194,9 +195,21 @@ def is_due(post, now):
     return now >= t
 
 
+def check_token():
+    """Simulation : vérifie en lecture seule que le token Meta répond (aucune publication)."""
+    try:
+        ig = api("GET", "%s?fields=username&access_token=%s" % (IG_USER, TOKEN))
+        fb = api("GET", "%s?fields=name&access_token=%s" % (FB_PAGE, TOKEN))
+        print("token OK : IG @%s, Page FB « %s »" % (ig.get("username"), fb.get("name")))
+    except Exception as e:
+        print("token KO :", e)
+
+
 def main():
     now = datetime.now(timezone.utc)
     changed = False
+    if DRY and TOKEN not in ("", "x"):
+        check_token()
     for post in SCHED:
         pid = post["post"]
         if ONLY and pid != ONLY:
